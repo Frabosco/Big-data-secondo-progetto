@@ -3,8 +3,6 @@
 
 import argparse
 from pyspark.sql import SparkSession
-from pyspark.sql import Window
-import pyspark.sql.functions as F
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--input_path", type=str, help="Input file path")
@@ -20,54 +18,59 @@ spark = SparkSession \
 
 linesRDD=spark.sparkContext.textFile(inPath).cache()
 
-industryRDD=linesRDD.map(f=lambda action: action.split(","))
+sector2TickerRDD=linesRDD.flatMap(f=lambda action: [action.split(",")])
 
 
-schema=industryRDD.first()
+sector2TickerRDD=sector2TickerRDD.map(f=lambda action: (str(action[3])+","+str(action[4])+","+str(action[9][:4])+","+str(action[1]),[action[5], action[8], action[9]]))
+schema=sector2TickerRDD.first()
+sector2TickerRDD=sector2TickerRDD.filter(lambda line: line!=schema)
 
-industryDF=spark.createDataFrame(data=industryRDD, schema=schema)
-
-industryDF=industryDF.withColumn("year", industryDF["date"].substr(0,4))
-
-industryDF=industryDF.drop("low","high","", "name")
-
-w=Window.partitionBy("ticker")
-fs=industryDF.withColumn("fs",F.min("date").over(w)).where(F.col("date")==F.col("fs")).drop("fs").select("sector", "industry","ticker","year",F.col("close").alias("fs"))
-ls=industryDF.withColumn("ls",F.max("date").over(w)).where(F.col("date")==F.col("ls")).drop("ls").select("sector", "industry","ticker","year",F.col("close").alias("ls"))
-
-industryDF=industryDF.join(fs, ["sector", "industry","ticker","year"])
-industryDF=industryDF.join(ls, ["sector", "industry","ticker","year"])
-industryDF=industryDF.withColumn("var", (industryDF.ls-industryDF.fs)/industryDF.fs*100).drop("fs","ls")
-
-w=Window.partitionBy("industry","year")
-maxT=industryDF.withColumn("mt",F.max("var").over(w)).where(F.col("var")==F.col("mt")).drop("mt").select("sector", "industry",F.col("ticker").alias("mt"),"year",F.col("var").alias("mv"))
-maxT=maxT.withColumn("maxVar", maxT.mv+maxT.mt)
-industryDF=industryDF.join(maxT, ["sector", "industry","year"]).drop("close","date")
-industryDF=industryDF.groupBy("sector","industry","year","ticker").agg(F.max("maxVar").alias("maxVar"), F.max("var").alias("var"), F.max("volume").alias("volume"))
-industryDF=industryDF.groupBy("sector","industry","year").agg(F.max("maxVar").alias("maxVar"),F.collect_list("ticker").alias("ticker"),F.collect_list("var").alias("var"),F.collect_list("volume").alias("volume"))
-industryDF=industryDF.orderBy("maxVar")
-
-industryDF=industryDF.groupBy("sector","industry").agg(F.max("maxVar").alias("maxVar"),F.collect_list("year").alias("year"), F.collect_list("ticker").alias("ticker"),F.collect_list("var").alias("var"),F.collect_list("volume").alias("volume"))
+tickerFTRDD=sector2TickerRDD.reduceByKey(lambda x,y:x if x[2]<y[2] else y)
+tickerLTRDD=sector2TickerRDD.reduceByKey(lambda x,y:x if x[2]>y[2] else y)
+tickerVarRDD=tickerFTRDD.join(tickerLTRDD)
+tickerVarRDD=tickerVarRDD.map(f=lambda action: (action[0],(float(action[1][1][0])-float(action[1][0][0]))/float(action[1][0][0])*100))
 
 
-data=industryDF.collect()
-final={}
-print(data)
-for row in data:
-    if row["sector"] in final.keys():
-        final[row["sector"]].append([row["industry"],row["year"],row["maxVar"],row["ticker"],row["var"],row["volume"]])
-    else:
-        final[row["sector"]]=[row["industry"],row["year"],row["maxVar"],row["ticker"],row["var"],row["volume"]]
+tickervolRDD=sector2TickerRDD.reduceByKey(lambda x,y:x if x[1]>y[1] else y)
+tickervolRDD=tickervolRDD.map(f=lambda action: (action[0],action[1][1]))
 
-s=[]
+tickerRDD=tickerVarRDD.join(tickervolRDD)
 
-for industry in final.keys():
-    s.append([f"sector: {industry}"])
-    s.append([f"industry: {final[industry][0]}"])
-    for i in range(len(final[industry][1])):
-        s.append([f"\tanno: {final[industry][1][i]}, max var percentuale: {final[industry][2]}%"])
-        for j in range(len(final[industry][3][i])):
-            s.append([f"\tticker: {final[industry][3][i][j]}, var percentuale: {final[industry][4][i][j]}%, max volume: {final[industry][5][i][j]}"])
-    s.append(["\n"])
+yearRDD=tickerRDD.map(f=lambda x: (x[0].split(","),x[1]))
+yearRDD=yearRDD.map(f=lambda x: (str(x[0][0])+","+str(x[0][1])+","+str(x[0][2]),[x[0][3],x[1][0], x[1][1]]))
 
-spark.createDataFrame(spark.sparkContext.parallelize(s)).coalesce(1).write.format("text").save(outPath)
+yearFT=yearRDD.reduceByKey(lambda x,y:x if x[1]>y[1] else y)
+yearFT=yearFT.map(f=lambda x: (x[0],(x[1][0],x[1][1])))
+
+yearRDD=yearFT.join(yearRDD)
+
+industryRDD=yearRDD.map(f=lambda x:(x[0].split(","),x[1]))
+industryRDD=industryRDD.map(f=lambda x: (str(x[0][0])+","+str(x[0][1]), [x[0][2], x[1][0], x[1][1][0], x[1][1][1], x[1][1][2]]))
+industryRDD=industryRDD.groupByKey().mapValues(list).sortBy(lambda x: x[1][0][1])
+
+sectorRDD=industryRDD.map(f=lambda x:(x[0].split(","),x[1]))
+sectorRDD=sectorRDD.map(f=lambda x: (str(x[0][0]), (x[0][1], x[1])))
+sectorRDD=sectorRDD.groupByKey().mapValues(list)
+
+""" action2FT=action2TickerRDD.reduceByKey(lambda x,y:x if x[4]<y[4] else y)
+action2LT=action2TickerRDD.reduceByKey(lambda x,y:x if x[4]>y[4] else y)
+action2var=action2FT.join(action2LT)
+action2var=action2var.map(f=lambda action: (action[0],(float(action[1][1][0])-float(action[1][0][0]))/float(action[1][0][0])*100))
+
+action2min=action2TickerRDD.reduceByKey(lambda x,y:x if float(x[1])<float(y[1]) else y)
+action2min=action2min.map(f=lambda action: (action[0],action[1][1]))
+action2max=action2TickerRDD.reduceByKey(lambda x,y:x if float(x[1])>float(y[1]) else y)
+action2max=action2max.map(f=lambda action: (action[0],action[1][2]))
+
+action2avgV=action2TickerRDD.map(f=lambda x:(x[0],(float(x[1][3]),1)))
+action2avgV=action2avgV.reduceByKey(lambda x,y:(x[0]+y[0],x[1]+y[1]) )
+action2avgV=action2avgV.map(f=lambda x:(x[0], float(x[1][0])/float(x[1][1])))
+#print(action2FT.collect()[0])
+
+yearRDD=action2var.join(action2min).join(action2max).join(action2avgV).sortByKey()
+yearRDD=yearRDD.map(f=lambda action:(action[0].split(","),action[1]))
+yearRDD=yearRDD.map(f=lambda action:(str(action[0][0])+","+str(action[0][1]),[action[0][2], action[1][0][0][0],action[1][0][0][1],action[1][0][1],action[1][1]]))
+yearRDD=yearRDD.groupByKey().mapValues(list) """
+sectorRDD.saveAsTextFile(outPath)
+
+#Tiicker2YearRDD=action2TickerRDD.reduceBy()

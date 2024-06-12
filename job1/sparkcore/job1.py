@@ -3,8 +3,6 @@
 
 import argparse
 from pyspark.sql import SparkSession
-from pyspark.sql import Window
-import pyspark.sql.functions as F
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--input_path", type=str, help="Input file path")
@@ -20,46 +18,32 @@ spark = SparkSession \
 
 linesRDD=spark.sparkContext.textFile(inPath).cache()
 
-action2TickerRDD=linesRDD.map(f=lambda action: action.split(","))
+action2TickerRDD=linesRDD.flatMap(f=lambda action: [action.split(",")])
 
 
+action2TickerRDD=action2TickerRDD.map(f=lambda action: (str(action[1])+","+str(action[2])+","+str(action[9][:4]),action[5:]))
 schema=action2TickerRDD.first()
+action2TickerRDD=action2TickerRDD.filter(lambda line: line!=schema)
 
-tickerDF=spark.createDataFrame(data=action2TickerRDD, schema=schema)
+action2FT=action2TickerRDD.reduceByKey(lambda x,y:x if x[4]<y[4] else y)
+action2LT=action2TickerRDD.reduceByKey(lambda x,y:x if x[4]>y[4] else y)
+action2var=action2FT.join(action2LT)
+action2var=action2var.map(f=lambda action: (action[0],(float(action[1][1][0])-float(action[1][0][0]))/float(action[1][0][0])*100))
 
-tickerDF=tickerDF.drop("sector","industry","")
+action2min=action2TickerRDD.reduceByKey(lambda x,y:x if float(x[1])<float(y[1]) else y)
+action2min=action2min.map(f=lambda action: (action[0],action[1][1]))
+action2max=action2TickerRDD.reduceByKey(lambda x,y:x if float(x[1])>float(y[1]) else y)
+action2max=action2max.map(f=lambda action: (action[0],action[1][2]))
 
-tickerDF=tickerDF.withColumn("year", tickerDF["date"].substr(0,4))
+action2avgV=action2TickerRDD.map(f=lambda x:(x[0],(float(x[1][3]),1)))
+action2avgV=action2avgV.reduceByKey(lambda x,y:(x[0]+y[0],x[1]+y[1]) )
+action2avgV=action2avgV.map(f=lambda x:(x[0], float(x[1][0])/float(x[1][1])))
+#print(action2FT.collect()[0])
 
-w=Window.partitionBy("year")
-fs=tickerDF.withColumn("fs",F.min("date").over(w)).where(F.col("date")==F.col("fs")).drop("fs").select("ticker","name","year",F.col("close").alias("fs"))
-ls=tickerDF.withColumn("ls",F.max("date").over(w)).where(F.col("date")==F.col("ls")).drop("ls").select("ticker","name","year",F.col("close").alias("ls"))
+yearRDD=action2var.join(action2min).join(action2max).join(action2avgV).sortByKey()
+yearRDD=yearRDD.map(f=lambda action:(action[0].split(","),action[1]))
+yearRDD=yearRDD.map(f=lambda action:(str(action[0][0])+","+str(action[0][1]),[action[0][2], action[1][0][0][0],action[1][0][0][1],action[1][0][1],action[1][1]]))
+yearRDD=yearRDD.groupByKey().mapValues(list)
+yearRDD.saveAsTextFile(outPath)
 
-tickerDF=tickerDF.groupBy("ticker","name","year").agg(F.min("low").alias("minP"), F.max("high").alias("maxP"),F.avg("volume").alias("avgV")).orderBy("year")
-tickerDF=tickerDF.join(fs, ["ticker","name","year"])
-tickerDF=tickerDF.join(ls, ["ticker","name","year"])
-
-tickerDF=tickerDF.withColumn("var", (tickerDF.ls-tickerDF.fs)/tickerDF.fs*100).drop("fs","ls")
-data=tickerDF.collect()
-final={}
-for row in data:
-    if (row["ticker"],row["name"]) in final.keys():
-        final[(row["ticker"],row["name"]) ].append([row["year"],row["var"],row["minP"],row["maxP"],row["avgV"]])
-    else:
-        final[(row["ticker"],row["name"])]=[[row["year"],row["var"],row["minP"],row["maxP"],row["avgV"]]]
-
-s=[]
-
-for key in final.keys():
-    s.append([f"ticker: {key[0]}, nome: {key[1]}, anni:"])
-
-    for year in final[key]:
-        s.append([f"\tanno: {year[0]}, var percentuale: {year[1]}%,  min: {year[2]}, max: {year[3]}, volume medio: {year[4]}"])
-
-    s.append(["\n"])
-
-spark.createDataFrame(spark.sparkContext.parallelize(s)).coalesce(1).write.format("text").save(outPath)
-
-
-
-
+#Tiicker2YearRDD=action2TickerRDD.reduceBy()
