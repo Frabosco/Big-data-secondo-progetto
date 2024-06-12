@@ -51,26 +51,6 @@ industryRDD=industryRDD.groupByKey().mapValues(list).sortBy(lambda x: x[1][0][1]
 sectorRDD=industryRDD.map(f=lambda x:(x[0].split(","),x[1]))
 sectorRDD=sectorRDD.map(f=lambda x: (str(x[0][0]), (x[0][1], x[1])))
 sectorRDD=sectorRDD.groupByKey().mapValues(list)
-
-""" action2FT=action2TickerRDD.reduceByKey(lambda x,y:x if x[4]<y[4] else y)
-action2LT=action2TickerRDD.reduceByKey(lambda x,y:x if x[4]>y[4] else y)
-action2var=action2FT.join(action2LT)
-action2var=action2var.map(f=lambda action: (action[0],(float(action[1][1][0])-float(action[1][0][0]))/float(action[1][0][0])*100))
-
-action2min=action2TickerRDD.reduceByKey(lambda x,y:x if float(x[1])<float(y[1]) else y)
-action2min=action2min.map(f=lambda action: (action[0],action[1][1]))
-action2max=action2TickerRDD.reduceByKey(lambda x,y:x if float(x[1])>float(y[1]) else y)
-action2max=action2max.map(f=lambda action: (action[0],action[1][2]))
-
-action2avgV=action2TickerRDD.map(f=lambda x:(x[0],(float(x[1][3]),1)))
-action2avgV=action2avgV.reduceByKey(lambda x,y:(x[0]+y[0],x[1]+y[1]) )
-action2avgV=action2avgV.map(f=lambda x:(x[0], float(x[1][0])/float(x[1][1])))
-#print(action2FT.collect()[0])
-
-yearRDD=action2var.join(action2min).join(action2max).join(action2avgV).sortByKey()
-yearRDD=yearRDD.map(f=lambda action:(action[0].split(","),action[1]))
-yearRDD=yearRDD.map(f=lambda action:(str(action[0][0])+","+str(action[0][1]),[action[0][2], action[1][0][0][0],action[1][0][0][1],action[1][0][1],action[1][1]]))
-yearRDD=yearRDD.groupByKey().mapValues(list) """
 sectorRDD.saveAsTextFile(outPath)
 
 #Tiicker2YearRDD=action2TickerRDD.reduceBy()
