@@ -61,7 +61,6 @@ for key in tickerList.keys():
         diff=tickerList[key][year]["lsClose"][0]-tickerList[key][year]["ftClose"][0]
         diffP=diff/tickerList[key][year]["ftClose"][0]*100
         volumeMeans=sum(tickerList[key][year]["volume"])/len(tickerList[key][year]["volume"])
-        print(f"\tanno: {year}, var percentuale: {int(diffP)}%,  min: {tickerList[key][year]["min"]:.2f}, max: 
-              {tickerList[key][year]["max"]:.2f}, volume medio: {int(volumeMeans)}")
+        print(f"\tanno: {year}, var percentuale: {int(diffP)}%,  min: {tickerList[key][year]["min"]:.2f}, max: {tickerList[key][year]["max"]:.2f}, volume medio: {int(volumeMeans)}")
 
     print("\n")
