@@ -2,6 +2,7 @@
 """job1.py"""
 
 import argparse
+from pyspark import SparkContext
 from pyspark.sql import SparkSession
 
 parser = argparse.ArgumentParser()
@@ -38,12 +39,13 @@ action2max=action2max.map(f=lambda action: (action[0],action[1][2]))
 action2avgV=action2TickerRDD.map(f=lambda x:(x[0],(float(x[1][3]),1)))
 action2avgV=action2avgV.reduceByKey(lambda x,y:(x[0]+y[0],x[1]+y[1]) )
 action2avgV=action2avgV.map(f=lambda x:(x[0], float(x[1][0])/float(x[1][1])))
-#print(action2FT.collect()[0])
 
 yearRDD=action2var.join(action2min).join(action2max).join(action2avgV).sortByKey()
 yearRDD=yearRDD.map(f=lambda action:(action[0].split(","),action[1]))
-yearRDD=yearRDD.map(f=lambda action:(str(action[0][0])+","+str(action[0][1]),[action[0][2], action[1][0][0][0],action[1][0][0][1],action[1][0][1],action[1][1]]))
+yearRDD=yearRDD.map(f=lambda action:("ticker: "+str(action[0][0])+", nome:"+str(action[0][1])+", anni:",
+                                     "anno: "+str(action[0][2])+" var percentuale: "+str(int(action[1][0][0][0]))+
+                                     "%,  min: "+str("%.2f" %float(action[1][0][0][1]))+", max: "+str("%.2f" %float(action[1][0][1]))+
+                                     ", volume medio: "+str(int(action[1][1]))))
 yearRDD=yearRDD.groupByKey().mapValues(list)
 yearRDD.saveAsTextFile(outPath)
 
-#Tiicker2YearRDD=action2TickerRDD.reduceBy()

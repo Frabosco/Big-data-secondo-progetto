@@ -8,7 +8,7 @@ for line in sys.stdin:
 
     cells=line.split(",")
     cells.pop(6)
-    cells.pop(7)
+    cells.pop(6)
 
     if cells[0]!='':
         print(f"{cells[1:5]}\t{cells[5:]}")

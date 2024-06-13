@@ -41,36 +41,26 @@ industryDF=industryDF.join(fs, ["sector", "industry","ticker","year"],"left")
 industryDF=industryDF.join(ls, ["sector", "industry","ticker","year"],"left")
 industryDF=industryDF.withColumn("var", (industryDF.ls-industryDF.fs)/industryDF.fs*100).drop("fs","ls")
 
+quot=industryDF.groupBy("sector","industry","year").agg(F.sum("volume").cast(StringType()).alias("quot"))
+
 w=Window.partitionBy("industry","year")
-maxT=industryDF.withColumn("mt",F.max("var").over(w)).where(F.col("var")==F.col("mt")).drop("mt").select("sector", "industry",F.col("ticker").alias("mt"),"year",F.col("var").alias("mv"))
-maxT=maxT.withColumn("mt", F.col("mt").cast(StringType()).alias("mt"))
-maxT=maxT.withColumn("mv", F.col("mv").cast(StringType()).alias("mv"))
-maxT=maxT.withColumn("maxVar", F.concat_ws(" ",maxT.mv,maxT.mt))
-industryDF=industryDF.join(maxT, ["sector", "industry","year"],"left").drop("close","date",("mt"),("mv"))
+maxTVar=industryDF.withColumn("mt",F.max("var").over(w)).where(F.col("var")==F.col("mt")).drop("mt").select("sector", "industry",F.col("ticker").alias("mt"),"year",F.col("var").alias("mv"))
+maxTVar=maxTVar.withColumn("mt", F.col("mt").cast(StringType()).alias("mt"))
+maxTVar=maxTVar.withColumn("mv", F.col("mv").cast(StringType()).alias("mv"))
+maxTVar=maxTVar.withColumn("maxVar", F.concat_ws("-",maxTVar.mv,maxTVar.mt)).drop("mt","mv")
 
-industryDF.show()
+maxTVol=industryDF.withColumn("mt",F.max("volume").over(w)).where(F.col("volume")==F.col("mt")).drop("mt").select("sector", "industry",F.col("ticker").alias("mt"),"year",F.col("volume").alias("mv"))
+maxTVol=maxTVol.withColumn("mt", F.col("mt").cast(StringType()).alias("mt"))
+maxTVol=maxTVol.withColumn("mv", F.col("mv").cast(StringType()).alias("mv"))
+maxTVol=maxTVol.withColumn("maxVol", F.concat_ws("-",maxTVol.mv,maxTVol.mt)).drop("mt","mv")
+tickerDF=maxTVar.join(maxTVol, ["sector", "industry","year"]).groupBy("sector","industry","year").agg(F.max("maxVar").alias("maxVar"),
+                                                                                                     F.max("maxVol").alias("maxVol"))
+tickerDF=tickerDF.join(quot, ["sector", "industry","year"])
 
+yearDF=tickerDF.groupBy("sector","industry").agg(F.collect_list(F.concat_ws(", ",tickerDF.year,tickerDF.quot,tickerDF.maxVar,
+                                                                            tickerDF.maxVol)).alias("year")).orderBy("sector")
 
-
-industryDF=industryDF.groupBy("sector","industry","year","ticker").agg(F.max(F.col("maxVar")).alias("maxVar"),
-                                                                       F.max("var").alias("var"),
-                                                                       F.max("volume").alias("volume")).orderBy("year")
-
-industryDF=industryDF.groupBy("sector","industry","year").agg(F.max("maxVar").alias("maxVar"),
-                                                              F.collect_list("ticker").alias("ticker"),
-                                                              F.collect_list("var").alias("var"),
-                                                              F.collect_list("volume").alias("volume")).orderBy("maxVar")
-
-industryDF=industryDF.groupBy("sector","industry").agg(F.collect_list("year").alias("year"),
-                                                       F.collect_list("maxVar").alias("maxVar"),
-                                                       F.collect_list("ticker").alias("ticker"),
-                                                       F.collect_list("var").alias("var"),
-                                                       F.collect_list("volume").alias("volume")).orderBy("sector")
-
-industryDF=industryDF.withColumn("year", F.col("year").cast(StringType()))
-industryDF=industryDF.withColumn("ticker", F.col("ticker").cast(StringType()))
-industryDF=industryDF.withColumn("var", F.col("var").cast(StringType()))
-industryDF=industryDF.withColumn("volume", F.col("volume").cast(StringType()))
-
+industryDF=yearDF.groupBy("sector").agg(F.collect_list(F.concat_ws(", ",yearDF.industry,yearDF.year)).alias("industry"))
+industryDF=industryDF.withColumn("industry", F.col("industry").cast(StringType()).alias("industry"))
 
 industryDF.write.csv(outPath)

@@ -10,11 +10,13 @@ industryList={}
 
 def update(industry, year, ticker, close, date, volume):
     
+    industryList[industry][year]["var"]+=close
     if(date<industryList[industry][year]["ftClose"][1]):
         industryList[industry][year]["ftClose"]=(close,date)
     elif(date>industryList[industry][year]["lsClose"][1]):
         industryList[industry][year]["lsClose"]=(close,date)
-    if ticker not in industryList[industry][year].keys():
+    
+    if ticker not in industryList[industry][year]["ticker"].keys():
         industryList[industry][year]["ticker"][ticker]={"ftClose":(close,date), "lsClose":(close,date), "volume":volume}
     else:
         if date<industryList[industry][year]["ticker"][ticker]["ftClose"][1]:
@@ -52,14 +54,14 @@ for line in sys.stdin:
         yearList={}
         tickerList={}
         tickerList[ticker]={"ftClose":(close,date), "lsClose":(close,date), "volume":volume}
-        yearList[year]={"ftClose":(close,date), "lsClose":(close,date), "ticker":tickerList}
+        yearList[year]={"var":(close),"ftClose":(close,date), "lsClose":(close,date), "ticker":tickerList}
         industryList[key]=yearList
 
     else:
         if year not in industryList[key].keys():
             tickerList={}
             tickerList[ticker]={"ftClose":(close,date), "lsClose":(close,date), "volume":volume}
-            industryList[key][year]={"ftClose":(close,date), "lsClose":(close,date), "ticker":tickerList}
+            industryList[key][year]={"var":(close), "ftClose":(close,date), "lsClose":(close,date), "ticker":tickerList}
             
         else:
             update(key, year, ticker, close, date, volume)
@@ -68,12 +70,13 @@ sectorList={}
 sectorDiff={}
 for key in industryList.keys():
     years=sorted(industryList[key].keys())
-    s=f"industria: {key[0]}anni:\n"
+    s=f"industria: {key[0]} anni:\n"
     maxDiffY=-math.inf
     for year in years:
         diffY=industryList[key][year]["lsClose"][0]-industryList[key][year]["ftClose"][0]
         diffPY=diffY/industryList[key][year]["ftClose"][0]*100
         tickers=industryList[key][year]["ticker"]
+        quot=industryList[key][year]["var"]
         maxDiff=(0,-math.inf)
         maxVol=(0,0)
         for ticker in tickers.keys():
@@ -81,22 +84,24 @@ for key in industryList.keys():
             diffP=diff/tickers[ticker]["ftClose"][0]*100
             if diffP>maxDiff[1]:
                 maxDiff=(ticker, diffP)
-            if tickers[ticker]["volume"]>maxVol[1]:
+            if float(tickers[ticker]["volume"])>float(maxVol[1]):
                 maxVol=(ticker, tickers[ticker]["volume"])
-        s+=f"anno: {year}, var percentuale: {int(diffPY)}%, moglior incremento:({maxDiff[0]},{maxDiff[1]:.2f}), maggior volume:({maxVol[0]},{maxVol[1]:.2f})\n"
-        if maxDiff[1]>maxDiffY:
-            maxDiffY=maxDiff[1]
+            else:
+                maxVol=maxVol
+        s+=f"anno: {year}, quotazione industria: {quot}%, maggior incremento:({maxDiff[0]},{maxDiff[1]:.2f}), maggior volume:({maxVol[0]},{maxVol[1]:.2f})\n"
+        if diffPY>maxDiffY:
+            maxDiffY=diffPY
     if key[1] not in sectorList.keys():
         sectorList[key[1]]=[s]
-        sectorDiff[key[1]]=diffPY
+        sectorDiff[key[1]]=quot
     else:
         sectorList[key[1]].append(s)
-        if maxDiffY>sectorDiff[key[1]]:
-            sectorDiff[key[1]]=maxDiffY
+        if quot>sectorDiff[key[1]]:
+            sectorDiff[key[1]]=quot
     
 
 sectorDiff2=sectorDiff
-sectors=sorted(sectorDiff2.items(), key=lambda x:x[1])
+sectors=sorted(sectorDiff2.items(), reverse=True, key=lambda x:x[1])
 
 for sector in sectors:
     print(f"settore: {sector[0]}({sectorDiff[sector[0]]})")

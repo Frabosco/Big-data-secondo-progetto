@@ -45,11 +45,12 @@ tickerDF=tickerDF.join(ls, ["ticker","name","year"],"left")
 
 tickerDF=tickerDF.withColumn("var", (tickerDF.ls-tickerDF.fs)/tickerDF.fs*100).drop("fs","ls")
 
+
 tickerDF=tickerDF.groupBy("ticker","name").agg(F.collect_list("year").alias("year"),
                                                F.collect_list("var").alias("var"),
                                                F.collect_list("minP").alias("minP"),
                                                F.collect_list("maxP").alias("maxP"),
-                                               F.collect_list("avgV").alias("avgV")).orderBy("ticker")
+                                               F.collect_list("avgV").alias("avgV")).orderBy("ticker","year")
 
 tickerDF=tickerDF.withColumn("year", F.col("year").cast(StringType()))
 tickerDF=tickerDF.withColumn("var", F.col("var").cast(StringType()))
@@ -57,4 +58,5 @@ tickerDF=tickerDF.withColumn("minP", F.col("minP").cast(StringType()))
 tickerDF=tickerDF.withColumn("maxP", F.col("maxP").cast(StringType()))
 tickerDF=tickerDF.withColumn("avgV", F.col("avgV").cast(StringType()))
 
-tickerDF.write.csv(outPath)
+tickerDF.orderBy("ticker","year").write.csv(outPath)
+
